@@ -2,17 +2,27 @@ from pathlib import Path
 import click
 from forge_cli.db import get_db
 
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
-@click.group()
+
+@click.group(context_settings=CONTEXT_SETTINGS)
 def project():
-    """Manage projects."""
+    """Manage registered project directories.
+
+    Projects are named aliases for local directories. All task commands
+    reference projects by their NAME rather than the full path.
+    """
 
 
 @project.command("add")
-@click.argument("name")
-@click.argument("path")
+@click.argument("name", metavar="NAME")
+@click.argument("path", metavar="PATH")
 def project_add(name, path):
-    """Add a project."""
+    """Register a directory as a named project.
+
+    NAME must be unique. PATH is expanded and resolved to an absolute path;
+    it must already exist on disk.
+    """
     path = str(Path(path).expanduser().resolve())
     if not Path(path).exists():
         raise click.ClickException(f"path does not exist: {path}")
@@ -23,7 +33,10 @@ def project_add(name, path):
 
 @project.command("list")
 def project_list():
-    """List all projects."""
+    """List all registered projects.
+
+    Shows each project's name, path, and number of non-done tasks (pending count).
+    """
     with get_db() as conn:
         rows = conn.execute(
             "SELECT p.*, COUNT(t.id) as task_count FROM projects p "

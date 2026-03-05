@@ -1,7 +1,7 @@
 [project]
 name = "forge-cli"
 version = "0.1.0"
-description = ""
+description = "AI-powered task runner that launches Claude Code against your tasks"
 authors = [
     {name = "AccursedGalaxy",email = "robinbohrer7@gmail.com"}
 ]

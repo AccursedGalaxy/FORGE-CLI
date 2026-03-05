@@ -9,9 +9,15 @@ from forge_cli.utils.fmt import fmt_task
 @click.command("add")
 @click.argument("project")
 @click.argument("title")
-@click.option("--plan", default=None, help="Task plan.")
+@click.option("--plan", default=None, help="Implementation plan passed verbatim to Claude when the task is started.")
 def add(project, title, plan):
-    """Add a task to a project."""
+    """Add a task to a project.
+
+    PROJECT is the registered project name (see `tm project list`).
+    TITLE is a short description of the work to be done.
+    Use --plan to provide a detailed step-by-step plan; it will be shown to
+    Claude when the task is started with `tm start`.
+    """
     with get_db() as conn:
         proj = resolve_project(conn, project)
         conn.execute(
@@ -26,7 +32,13 @@ def add(project, title, plan):
 @click.argument("project", required=False)
 @click.option("--all", "show_all", is_flag=True, default=False, help="List tasks for all projects.")
 def list_(project, show_all):
-    """List tasks."""
+    """List tasks for a project or all projects.
+
+    \b
+    Examples:
+      tm list myapp          List tasks for the 'myapp' project
+      tm list --all          List tasks across every registered project
+    """
     with get_db() as conn:
         if show_all:
             projects = conn.execute("SELECT * FROM projects ORDER BY name").fetchall()
@@ -59,7 +71,11 @@ def list_(project, show_all):
 @click.argument("project")
 @click.argument("id", type=int)
 def show(project, id):
-    """Show details of a task."""
+    """Show full details of a task.
+
+    Displays status, timestamps (started/completed only shown if set),
+    and the full plan text if one exists.
+    """
     with get_db() as conn:
         proj = resolve_project(conn, project)
         task = conn.execute(
@@ -83,7 +99,20 @@ def show(project, id):
 @click.argument("project")
 @click.argument("id", type=int)
 def start(project, id):
-    """Start a task (launches Claude Code)."""
+    """Start a task by launching Claude Code autonomously.
+
+    Marks the task as in_progress, then runs:
+
+    \b
+      claude --dangerously-skip-permissions --print "<title + plan>"
+
+    from the project's registered directory. Claude implements the task and
+    prints a summary when finished. After it completes, mark the task done
+    with `tm done <project> <id>`.
+
+    Note: --dangerously-skip-permissions allows Claude to run without
+    permission prompts. Only use on projects you trust.
+    """
     with get_db() as conn:
         proj = resolve_project(conn, project)
         task = conn.execute(
@@ -154,9 +183,13 @@ def delete(project, id):
 @click.argument("id", type=int)
 @click.option("--title", default=None, help="New title.")
 @click.option("--plan", default=None, help="New plan.")
-@click.option("--status", default=None, type=click.Choice(VALID_STATUSES), help="New status.")
+@click.option("--status", default=None, type=click.Choice(VALID_STATUSES),
+              help="New status. Valid values: pending, in_progress, done, blocked.")
 def edit(project, id, title, plan, status):
-    """Edit a task's fields."""
+    """Edit one or more fields of a task.
+
+    At least one of --title, --plan, or --status must be provided.
+    """
     updates = {k: v for k, v in [("title", title), ("plan", plan), ("status", status)] if v is not None}
     if not updates:
         raise click.ClickException("nothing to update. use --title, --plan, or --status")
