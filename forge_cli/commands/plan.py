@@ -1,7 +1,10 @@
 import os
 import subprocess
+import sys
 import click
+from rich.rule import Rule
 from forge_cli.db import get_db, resolve_project
+from forge_cli.utils.display import console, PAGER_LINE_THRESHOLD
 
 PLANNING_PROMPT = """\
 You are a planning assistant. Do NOT implement anything.
@@ -45,7 +48,8 @@ def plan(project, title):
         title=title,
     )
 
-    print(f"\nPlanning: {title}\n" + "─" * 60)
+    console.print()
+    console.print(Rule(f"[bold]Planning: {title}[/bold]", style="plan.border"))
     os.chdir(proj["path"])
 
     proc = subprocess.Popen(
@@ -59,7 +63,7 @@ def plan(project, title):
         lines.append(line)
     proc.wait()
 
-    print("─" * 60)
+    console.print(Rule(style="plan.border"))
 
     if proc.returncode != 0:
         raise click.ClickException("claude exited with an error.")
@@ -68,8 +72,13 @@ def plan(project, title):
     if not plan_text:
         raise click.ClickException("claude returned an empty plan.")
 
+    if len(lines) > PAGER_LINE_THRESHOLD and sys.stdout.isatty():
+        if click.confirm(f"\nPlan is {len(lines)} lines. Review in pager?", default=False):
+            with console.pager(styles=False):
+                console.print(plan_text)
+
     if not click.confirm("\nSave as new task?", default=True):
-        print("discarded.")
+        console.print("[dim]discarded.[/dim]")
         return
 
     with get_db() as conn:
@@ -79,4 +88,4 @@ def plan(project, title):
             (proj_row["id"], title, plan_text),
         )
         task_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    print(f"added task #{task_id} to '{project}'")
+    console.print(f"[success]added task #{task_id} to '{project}'[/]")

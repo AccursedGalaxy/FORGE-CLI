@@ -1,8 +1,13 @@
 import os
 import subprocess
 import click
-from forge_cli.config import VALID_STATUSES
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.table import Table
+from rich.text import Text
+from forge_cli.config import STATUS_ICONS, VALID_STATUSES
 from forge_cli.db import get_db, resolve_project
+from forge_cli.utils.display import console, STATUS_STYLES, PLAN_PREVIEW_LINES
 from forge_cli.utils.fmt import fmt_task
 
 
@@ -25,7 +30,7 @@ def add(project, title, plan):
             (proj["id"], title, plan)
         )
         task_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    print(f"added task #{task_id} to '{project}'")
+    console.print(f"[success]added task #{task_id} to '{project}'[/]")
 
 
 @click.command("list")
@@ -48,9 +53,9 @@ def list_(project, show_all):
                 ).fetchall()
                 if not tasks:
                     continue
-                print(f"\n{p['name']}  ({p['path']})")
+                console.print(f"\n[project.header]{p['name']}[/]  [label]{p['path']}[/label]")
                 for t in tasks:
-                    print(fmt_task(t))
+                    console.print(fmt_task(t))
         else:
             if not project:
                 raise click.ClickException("usage: tm list <project> [--all]")
@@ -59,12 +64,12 @@ def list_(project, show_all):
                 "SELECT * FROM tasks WHERE project_id=? ORDER BY status, id", (proj["id"],)
             ).fetchall()
             if not tasks:
-                print(f"no tasks in '{project}'")
+                console.print(f"[dim]no tasks in '{project}'[/dim]")
                 return
-            print(f"\n{proj['name']}  ({proj['path']})")
+            console.print(f"\n[project.header]{proj['name']}[/]  [label]{proj['path']}[/label]")
             for t in tasks:
-                print(fmt_task(t))
-            print()
+                console.print(fmt_task(t))
+            console.print()
 
 
 @click.command("show")
@@ -83,16 +88,31 @@ def show(project, id):
         ).fetchone()
         if not task:
             raise click.ClickException(f"task #{id} not found in '{project}'")
-    print(f"\n[{task['id']}] {task['title']}")
-    print(f"status:  {task['status']}")
-    print(f"created: {task['created_at']}")
+
+    status = task["status"]
+    icon = STATUS_ICONS.get(status, "?")
+    style = STATUS_STYLES.get(status, "")
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="label")
+    grid.add_column()
+    grid.add_row("status", Text(f"{icon}  {status}", style=style))
+    grid.add_row("created", task["created_at"])
     if task["started_at"]:
-        print(f"started: {task['started_at']}")
+        grid.add_row("started", task["started_at"])
     if task["completed_at"]:
-        print(f"done:    {task['completed_at']}")
+        grid.add_row("done", task["completed_at"])
+
+    content = grid
     if task["plan"]:
-        print(f"\nplan:\n  {task['plan'].replace(chr(10), chr(10)+'  ')}")
-    print()
+        from rich.console import Group
+        from rich.rule import Rule
+        from rich.padding import Padding
+        plan_block = Padding(task["plan"], (1, 0, 0, 2))
+        content = Group(grid, Rule(style="plan.border"), plan_block)
+
+    console.print(Panel(content, title=f"[bold]#{task['id']} {task['title']}[/bold]", expand=False))
+    console.print()
 
 
 @click.command("start")
@@ -125,11 +145,20 @@ def start(project, id):
             (task["id"],)
         )
 
-    print(f"\n▶  {task['title']}")
+    console.print(f"\n[bold]▶  {task['title']}[/bold]")
+
     if task["plan"]:
-        print(f"\nplan:\n  {task['plan'].replace(chr(10), chr(10)+'  ')}")
-    print(f"\nproject: {proj['path']}")
-    print(f"\nlaunching claude code...\n")
+        plan_lines = task["plan"].splitlines()
+        preview = plan_lines[:PLAN_PREVIEW_LINES]
+        console.print()
+        for line in preview:
+            console.print(f"  [dim]{line}[/dim]")
+        remaining = len(plan_lines) - PLAN_PREVIEW_LINES
+        if remaining > 0:
+            console.print(f"  [dim]... {remaining} more lines[/dim]")
+
+    console.print(f"\n[label]project:[/label] {proj['path']}")
+    console.print("\n[dim]launching claude code...[/dim]\n")
 
     prompt = (
         f"Task: {task['title']}\n\nPlan:\n"
@@ -140,7 +169,7 @@ def start(project, id):
     os.chdir(proj["path"])
     subprocess.run(["claude", "--dangerously-skip-permissions", "--print", prompt])
 
-    print(f"\n✓  mark done with: tm done {project} {id}")
+    console.print(f"\n[success]✓[/]  mark done with: [bold]tm done {project} {id}[/bold]")
 
 
 @click.command("done")
@@ -159,7 +188,7 @@ def done(project, id):
             "UPDATE tasks SET status='done', completed_at=datetime('now') WHERE id=?",
             (task["id"],)
         )
-    print(f"✓  #{id} '{task['title']}' marked done")
+    console.print(f"[success]✓[/]  #{id} '{task['title']}' marked done")
 
 
 @click.command("delete")
@@ -175,7 +204,7 @@ def delete(project, id):
         if not task:
             raise click.ClickException(f"task #{id} not found in '{project}'")
         conn.execute("DELETE FROM tasks WHERE id=?", (task["id"],))
-    print(f"deleted #{id} '{task['title']}'")
+    console.print(f"[dim]deleted[/dim] #{id} '{task['title']}'")
 
 
 @click.command("edit")
@@ -202,4 +231,4 @@ def edit(project, id, title, plan, status):
             raise click.ClickException(f"task #{id} not found in '{project}'")
         set_clause = ", ".join(f"{k}=?" for k in updates)
         conn.execute(f"UPDATE tasks SET {set_clause} WHERE id=?", (*updates.values(), task["id"]))
-    print(f"updated #{id}")
+    console.print(f"[success]updated[/success] #{id}")
