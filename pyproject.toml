@@ -5,11 +5,13 @@ description = ""
 authors = [
     {name = "AccursedGalaxy",email = "robinbohrer7@gmail.com"}
 ]
-readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "click>=8.1",
 ]
 
+[project.scripts]
+tm = "forge_cli.cli:cli"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
